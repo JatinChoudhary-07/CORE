@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CORE | Campus Operations & Resource Engine</title>
+    <!-- Core Dependencies -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script type="module" src="https://unpkg.com/@splinetool/viewer@1.9.54/build/spline-viewer.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="css/style.css">
+
+</head>
+<body>
+
+    <div id="loader-overlay">
+        <div class="loader-ring"></div>
+        <div style="letter-spacing: 8px; font-size: 0.8rem; text-transform: uppercase; font-weight: 900; opacity: 0.6;">Synchronizing CORE Node</div>
+    </div>
+
+    <div id="login-bg"></div>
+    <div class="webgl-container"><canvas class="webgl-canvas"></canvas></div>
+    <div class="vignette"></div>
+
+    <div id="floating-panel-overlay" class="floating-panel-overlay">
+        <div id="floating-panel-node" class="floating-panel-root">
+            <div class="floating-panel-header"><h3 id="panel-title">Operations</h3><button onclick="window.closeModal()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;"><i data-lucide="x"></i></button></div>
+            <div class="floating-panel-body" id="panel-body"></div>
+            <div class="floating-panel-footer" id="panel-footer"></div>
+        </div>
+    </div>
+
+    <div id="app-container">
+        <!-- LOGIN VIEW -->
+        <div id="main-window" class="main-window login-mode">
+            <div id="view-login" class="login-layout">
+                <div class="login-content">
+                    <h1 style="font-size: 5rem; font-weight: 100; letter-spacing: -7px;">CORE</h1>
+                    <p style="color: var(--text-muted); font-size: 0.75rem; letter-spacing: 5px; font-weight: 900; text-transform: uppercase; margin-bottom: 4rem;">Campus Operations & Resource Engine</p>
+                    <form id="login-form">
+                        <input type="text" id="node-uid" placeholder="NODE ID (ST-0001, FA-0001, AD-0001, AU-0001)" required>
+                        <input type="password" id="node-pass" placeholder="SECURITY TOKEN" required>
+                        <button type="submit" class="btn-action" style="width:100%; margin-top: 1.5rem; padding: 1.3rem;">AUTHENTICATE NODE</button>
+                    </form>
+                    <div style="margin-top: 3rem; font-size: 0.65rem; opacity: 0.4; display: flex; gap: 15px; flex-wrap: wrap;">
+                        <span>🔒 256-BIT ENCRYPTION ACTIVE</span><span>🌐 GLOBAL CAMPUS LINKED</span>
+                    </div>
+                </div>
+                <div class="login-visual">
+                    <spline-viewer url="https://prod.spline.design/kZDDjO5HuC9GJUM2/scene.splinecode"></spline-viewer>
+                </div>
+            </div>
+
+            <!-- DASHBOARD VIEW -->
+            <div id="view-dashboard" class="hidden" style="width:100%; height:100%; display: flex; flex-direction: column; opacity: 0;">
+                <nav class="nav-pill">
+                    <div id="nav-mount" style="display:flex;"></div>
+                    <div style="width:1px; height:24px; background:rgba(255,255,255,0.1); margin: 0 10px;"></div>
+                    <button class="nav-btn" onclick="window.handleLogout()"><i data-lucide="power"></i><div class="nav-tooltip">Logout</div></button>
+                </nav>
+                <main style="flex: 1; padding: 0 5% 5% 5%; overflow-y: auto;">
+                    <div style="max-width: 1400px; margin: 0 auto;" id="main-mount"></div>
+                </main>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-hub" style="position:fixed; bottom: 2rem; right: 2rem; z-index: 10000; display:flex; flex-direction:column; gap:10px;"></div>
+
+    <!-- Firebase Initialization -->
+    <script>
+        // Firebase Hosting should inject __firebase_config automatically.
+        // We'll wait up to 2 seconds for it, then use fallback.
+        let configReady = new Promise(resolve => {
+            let attempts = 0;
+            const checkConfig = () => {
+                if (window.__firebase_config && window.__firebase_config.apiKey) {
+                    console.log('✅ Firebase config injected by hosting');
+                    window.__firebaseConfig = window.__firebase_config;
+                    resolve();
+                } else if (attempts < 20) {
+                    attempts++;
+                    setTimeout(checkConfig, 100);
+                } else {
+                    console.warn('⚠️ Firebase config not injected. Using stored config if available.');
+                    // Fallback: Try to get from localStorage or use without apiKey temporarily
+                    window.__firebaseConfig = window.__firebase_config || {
+                        projectId: "aegis-protocol-bd795",
+                        authDomain: "aegis-protocol-bd795.firebaseapp.com",
+                        storageBucket: "aegis-protocol-bd795.appspot.com",
+                        messagingSenderId: "1001242859149",
+                        appId: "1:1001242859149:web:78472004c3ce58cd9834c4"
+                    };
+                    resolve();
+                }
+            };
+            checkConfig();
+        });
+        
+        configReady.then(() => {
+            console.log('✅ Firebase config ready:', window.__firebaseConfig.projectId);
+            console.log('🔍 Full config object:', window.__firebaseConfig);
+            console.log('🔑 API Key present:', !!window.__firebaseConfig.apiKey);
+        });
+    </script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, collection, onSnapshot, addDoc, updateDoc, serverTimestamp, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global State Logic
+        let appInstance, db, auth;
+        window.bootReady = false;
+        window.state = { 
+            user: null, tab: 0, subTab: 'tickets', 
+            tickets: [], opportunities: [], applications: [], 
+            circulars: [], privateMessages: [], activeId: null, activeDmId: null,
+            dataReady: false
+        };
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'core-campus-v8-vfinal-v3';
+
+        const USER_DB = {
+            'ST-0001': { role: 'Student', name: 'Alex Johnson', pass: 'pass' },
+            'FA-0001': { role: 'Faculty', name: 'Dr. Sarah Smith', pass: 'pass' },
+            'FA-0002': { role: 'Faculty', name: 'Prof. David Miller', pass: 'pass' },
+            'AD-0001': { role: 'Admin', name: 'Sys Control', pass: 'pass' },
+            'AU-0001': { role: 'Authority', name: 'Chancellor Henderson', pass: 'pass' }
+        };
+
+        const NAV_SCHEMA = {
+            Student: [{label: 'Dashboard', icon: 'layout-dashboard'}, {label: 'Action Center', icon: 'zap'}, {label: 'Profile', icon: 'user'}],
+            Faculty: [{label: 'Academia', icon: 'file-spreadsheet'}, {label: 'Inbox', icon: 'inbox'}, {label: 'Channel', icon: 'users'}, {label: 'Profile', icon: 'user'}],
+            Admin: [{label: 'Ticket Control', icon: 'settings-2'}, {label: 'Opportunity Hub', icon: 'briefcase'}, {label: 'Profile', icon: 'user'}],
+            Authority: [{label: 'Escalations', icon: 'alert-triangle'}, {label: 'Oversight', icon: 'bar-chart-2'}, {label: 'Profile', icon: 'user'}]
+        };
+
+        const BG_WALLS = [
+            "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=2000",
+            "https://images.unsplash.com/photo-1519389950473-47ba0277781c?q=80&w=2000",
+            "https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=2000",
+            "https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=2000"
+        ];
+
+        // WEBGL ENGINE
+        const WebGLEngine = {
+            renderer: null, scene: null, camera: null, material: null, textures: [],
+            async init() {
+                const canvas = document.querySelector(".webgl-canvas");
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+                this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                const loader = new THREE.TextureLoader();
+                const ps = BG_WALLS.map(url => new Promise(res => loader.load(url, t => res({ t, aspect: t.image.width / t.image.height }), undefined, () => res({t:null, aspect:1.77}))));
+                this.textures = await Promise.all(ps);
+                this.material = new THREE.ShaderMaterial({
+                    uniforms: { 
+                        uT1: { value: this.textures[0].t }, uT2: { value: this.textures[0].t }, uP: { value: 0 },
+                        uWinRes: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+                        uA1: { value: this.textures[0].aspect }, uA2: { value: this.textures[0].aspect }
+                    },
+                    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }`,
+                    fragmentShader: `
+                        uniform sampler2D uT1, uT2; uniform float uP, uA1, uA2; uniform vec2 uWinRes;
+                        varying vec2 vUv;
+                        vec2 cover(vec2 uv, float winA, float texA) {
+                            if (winA > texA) return vec2(uv.x, uv.y * texA/winA + (1.0 - texA/winA)*0.5);
+                            return vec2(uv.x * winA/texA + (1.0 - winA/texA)*0.5, uv.y);
+                        }
+                        void main() {
+                            float winA = uWinRes.x / uWinRes.y;
+                            gl_FragColor = vec4(mix(texture2D(uT1, cover(vUv, winA, uA1)).rgb, texture2D(uT2, cover(vUv, winA, uA2)).rgb, uP), 1.0);
+                        }
+                    `
+                });
+                this.scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material));
+                const loop = () => { requestAnimationFrame(loop); this.renderer.render(this.scene, this.camera); };
+                loop();
+                window.addEventListener('resize', () => { 
+                    this.renderer.setSize(window.innerWidth, window.innerHeight); 
+                    this.material.uniforms.uWinRes.value.set(window.innerWidth, window.innerHeight); 
+                });
+            },
+            transition(idx) {
+                if (!this.material) return;
+                const target = this.textures[idx % this.textures.length] || this.textures[0];
+                this.material.uniforms.uT1.value = this.material.uniforms.uT2.value;
+                this.material.uniforms.uA1.value = this.material.uniforms.uA2.value;
+                this.material.uniforms.uT2.value = target.t;
+                this.material.uniforms.uA2.value = target.aspect;
+                gsap.fromTo(this.material.uniforms.uP, { value: 0 }, { value: 1, duration: 1, ease: "power2.inOut" });
+            }
+        };
+
+        // --- GLOBAL ACTIONS ---
+        window.notify = (m) => {
+            const e = document.createElement('div');
+            e.style = "background:rgba(0,0,0,0.95); padding:1.2rem 2.2rem; border-radius:16px; color:white; font-size:0.85rem; font-weight:700; border-left:4px solid var(--primary); margin-top:10px;";
+            e.innerText = m;
+            document.getElementById('toast-hub').appendChild(e);
+            gsap.from(e, { x: 50, opacity: 0, duration: 0.4 });
+            setTimeout(() => gsap.to(e, { opacity: 0, x: 50, onComplete: () => e.remove() }), 3000);
+        };
+
+        window.openModal = (t, b, f = '') => {
+            document.getElementById('panel-title').innerText = t;
+            document.getElementById('panel-body').innerHTML = b;
+            document.getElementById('panel-footer').innerHTML = f || `<button class="btn-action" onclick="window.closeModal()">Close</button>`;
+            document.getElementById('floating-panel-overlay').style.display = 'flex';
+            gsap.fromTo("#floating-panel-node", { opacity: 0, scale: 0.95, y: 20 }, { opacity: 1, scale: 1, y: 0, duration: 0.3 });
+            lucide.createIcons();
+        };
+
+        window.closeModal = () => {
+            gsap.to("#floating-panel-node", { opacity: 0, scale: 0.95, duration: 0.2, onComplete: () => {
+                document.getElementById('floating-panel-overlay').style.display = 'none';
+                window.state.activeId = null;
+                window.state.activeDmId = null;
+            }});
+        };
+
+        window.handleLogout = () => {
+            window.state.user = null; window.state.tab = 0; window.state.activeId = null;
+            gsap.to("#view-dashboard", { opacity: 0, duration: 0.4, onComplete: () => {
+                document.getElementById('view-dashboard').classList.add('hidden');
+                document.getElementById('view-login').classList.remove('hidden');
+                gsap.set("#view-login", { clearProps: "all", opacity: 1 });
+                gsap.set(".main-window", { clearProps: "all" });
+                document.getElementById('main-window').className = 'main-window login-mode';
+                document.querySelector('.webgl-container').style.opacity = "0";
+                window.notify("Session Reset");
+            }});
+        };
+
+        const renderEmpty = (msg) => `
+            <div class="liquid-glass-card">
+                <i data-lucide="info"></i>
+                <p>${msg || 'No records found in this node.'}</p>
+            </div>`;
+
+        // --- STUDENT SPECIFIC FUNCTIONS ---
+        window.viewTimetable = () => {
+            const table = `
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead><tr><th>Period</th><th>Mon</th><th>Tue</th><th>Wed</th></tr></thead>
+                        <tbody>
+                            <tr><td>09:00 - 11:00</td><td>CS-401 (L)</td><td>CS-402 (L)</td><td>CS-405 (L)</td></tr>
+                            <tr><td>11:30 - 13:30</td><td>CS-405 (P)</td><td>HU-401 (L)</td><td>Library</td></tr>
+                            <tr><td>14:30 - 16:30</td><td>Project Lab</td><td>CS-401 (P)</td><td>Club Act</td></tr>
+                        </tbody>
+                    </table>
+                </div>`;
+            window.openModal("Academic Timetable", table);
+        };
+
+        window.viewGrades = () => {
+            const grades = `
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead><tr><th>Course Code</th><th>Course Title</th><th>Credits</th><th>Grade</th></tr></thead>
+                        <tbody>
+                            <tr><td>CS-401</td><td>Operating Systems</td><td>4</td><td>A+</td></tr>
+                            <tr><td>CS-402</td><td>Database Systems</td><td>4</td><td>A</td></tr>
+                            <tr><td>CS-405</td><td>Cloud Computing</td><td>4</td><td>O</td></tr>
+                        </tbody>
+                    </table>
+                </div><p style="margin-top:20px; font-weight:800; color:var(--primary);">Current CGPA: 9.20 / 10.00</p>`;
+            window.openModal("Academic Ledger", grades);
+        };
+
+        window.viewAlerts = () => {
+            const alerts = `
+                <div class="list-stack">
+                    <div class="list-item"><div><strong>Security Node Sync</strong><br><small>Identity access tokens updated.</small></div><span class="badge">SECURE</span></div>
+                    <div class="list-item"><div><strong>New Circular Board</strong><br><small>Faculty node posted a requirement.</small></div><span class="badge prio-High">NEW</span></div>
+                </div>`;
+            window.openModal("System Alerts", alerts);
+        };
+
+        // --- FACULTY TOOLS ---
+        window.downloadTemplate = (type) => {
+            const content = type === 'attendance' ? "Student_ID,Name,Status\nST-0001,Alex Johnson,Present\nST-0002,Jane Doe,Absent" : "Student_ID,Name,Grade\nST-0001,Alex Johnson,9.2\nST-0002,Jane Doe,8.8";
+            const blob = new Blob([content], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = `${type}_template.csv`; a.click();
+            window.notify(`${type} template ready.`);
+        };
+
+        window.openAttendanceOptions = () => {
+            const modalContent = `<div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                <button class="btn-action" style="padding: 1.5rem; font-size: 1rem; text-align: left;" onclick="window.openCSVUpload('attendance')">📤 Upload CSV</button>
+                <button class="btn-action" style="padding: 1.5rem; font-size: 1rem; text-align: left; background: var(--warning);" onclick="window.downloadTemplate('attendance'); window.closeModal();">📥 Download Sample CSV</button>
+            </div>`;
+            window.openModal('Student Attendance Options', modalContent);
+        };
+
+        window.openGradesOptions = () => {
+            const modalContent = `<div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                <button class="btn-action" style="padding: 1.5rem; font-size: 1rem; text-align: left;" onclick="window.openCSVUpload('grades')">📤 Upload CSV</button>
+                <button class="btn-action" style="padding: 1.5rem; font-size: 1rem; text-align: left; background: var(--warning);" onclick="window.downloadTemplate('grades'); window.closeModal();">📥 Download Sample CSV</button>
+            </div>`;
+            window.openModal('Grades Options', modalContent);
+        };
+
+        window.openCSVUpload = (type) => {
+            window.closeModal();
+            window.state.csvType = type;
+            document.getElementById('c-in').click();
+        };
+
+        window.publishCircular = async () => {
+            if(!window.bootReady || !db) return window.notify("System initializing... Please wait.");
+            const text = document.getElementById('c-text')?.value;
+            if(!text) return window.notify("Text Required");
+            try {
+                await addDoc(collection(db, 'circulars'), {
+                    text, senderName: window.state.user.name, senderRole: window.state.user.role, senderId: window.state.user.uid, content: "Official campus notice for student review.", visibility: 'public', createdAt: serverTimestamp()
+                });
+                console.log('✅ Circular published to Firestore');
+                window.notify("Broadcast Dispatched"); window.closeModal();
+            } catch (e) {
+                console.error('❌ Error publishing circular:', e);
+                window.notify("Database Error: " + e.message);
+            }
+        };
+
+        window.issueStudentNotice = async () => {
+            if(!db) return window.notify("Database not connected yet. Please wait...");
+            const text = document.getElementById('notice-text').value;
+            if(!text) return;
+            try {
+                await addDoc(collection(db, 'circulars'), {
+                    text, senderName: window.state.user.name, senderRole: 'Faculty', senderId: window.state.user.uid, content: "Broadcast issued via faculty node.", visibility: 'faculty-only', createdAt: serverTimestamp()
+                });
+                console.log('✅ Faculty notice published to Firestore');
+                window.notify("Notice Broadcasted"); window.closeModal();
+            } catch (e) {
+                console.error('❌ Error broadcasting notice:', e);
+                window.notify("Failed: " + e.message);
+            }
+        };
+
+        window.viewCircular = (id) => {
+            const c = window.state.circulars.find(x => x.id === id);
+            if(c) window.openModal(`Notice: Ref#${id.slice(0,4)}`, `<div style="opacity:0.8; line-height:1.6;">${c.text}<br><br>${c.content || 'System generated broadcast.'}</div>`);
+        };
+
+        // --- DATA HANDLERS ---
+        window.handleCSV = (input) => {
+            const file = input.files[0];
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const lines = e.target.result.split('\n').map(l => l.split(','));
+                let html = `<div class="table-wrap"><table class="data-table"><thead><tr>${lines[0].map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>`;
+                lines.slice(1).forEach(row => { if(row.length > 1) html += `<tr>${row.map(cell => `<td contenteditable="true">${cell}</td>`).join('')}</tr>`; });
+                html += `</tbody></table></div>`;
+                window.openModal("Records Preview", html, `<button class="btn-action" onclick="window.notify('Records Stored'); window.closeModal()">Commit Data</button>`);
+            };
+            reader.readAsText(file);
+        };
+
+        window.sendTicket = async () => {
+            if(!window.bootReady || !db) return window.notify("System initializing... Please wait.");
+            const title = document.getElementById('t-title').value;
+            const desc = document.getElementById('t-desc').value;
+            const role = document.getElementById('t-role').value;
+            const prio = document.getElementById('t-prio').value;
+            if(!title || !desc) return window.notify("Missing Fields");
+            try {
+                const ticketRef = await addDoc(collection(db, 'tickets'), { title, description: desc, assignedRole: role, priority: prio, studentId: window.state.user.uid, studentName: window.state.user.name, status: 'Open', createdAt: serverTimestamp(), updatedAt: serverTimestamp(), messageCount: 0 });
+                console.log('✅ Ticket created:', ticketRef.id);
+                window.notify("Logged Successfully"); window.closeModal();
+            } catch (e) {
+                console.error('❌ Ticket creation failed:', e);
+                window.notify("Error: " + e.message);
+            }
+        };
+
+        window.openTicket = (id) => {
+            window.state.activeId = id; const t = window.state.tickets.find(x => x.id === id);
+            const chatHtml = `<div class="chat-view"><div class="chat-msgs" id="chat-scroller"></div><div class="chat-input" style="padding:1rem; border-top:1px solid var(--glass-border); display:flex; gap:10px; background:rgba(0,0,0,0.1);"><input type="text" id="chat-box-input" placeholder="Type message..." style="margin:0;"><button class="btn-action" onclick="window.sendMsg('${id}')">Send</button></div></div>`;
+            let footer = `<button onclick="window.closeModal()" style="background:transparent; border:1px solid var(--glass-border); color:white; padding:10px 20px; border-radius:12px; cursor:pointer;">Close</button>`;
+            if(window.state.user.role !== 'Student' && t.status !== 'Resolved') footer += `<button class="btn-action" onclick="window.resolveTicket('${id}')" style="background:var(--success); margin-left:10px;">Mark Resolved</button>`;
+            window.openModal(`Ticket: ${t.title}`, chatHtml, footer);
+            window.refreshChatContent(id);
+        };
+
+        window.refreshChatContent = (id) => {
+            if(!db) return console.warn('⚠️ Database not initialized yet');
+            const t = window.state.tickets.find(x => x.id === id);
+            const container = document.getElementById('chat-scroller'); if(!container || !t) return;
+            // Load messages from subcollection
+            onSnapshot(collection(db, 'tickets', id, 'messages'), s => {
+                const messages = s.docs.map(d => ({...d.data()}));
+                container.innerHTML = `<div class="bubble theirs"><strong>SYSTEM:</strong> ${t.description}</div>` + messages.map(m => `<div class="bubble ${m.senderId === window.state.user.uid ? 'mine' : 'theirs'}"><strong>${m.senderName}:</strong> ${m.text}</div>`).join('');
+                container.scrollTop = container.scrollHeight;
+            }, err => console.error('❌ Failed to load ticket messages:', err));
+        };
+
+        window.sendMsg = async (id) => {
+            if(!window.bootReady || !db) return window.notify("System initializing... Please wait.");
+            const box = document.getElementById('chat-box-input'); if(!box.value) return;
+            const text = box.value; box.value = '';
+            try {
+                await addDoc(collection(db, 'tickets', id, 'messages'), { sender: window.state.user.role, senderName: window.state.user.name, senderId: window.state.user.uid, text, timestamp: serverTimestamp() });
+                console.log('✅ Message sent to ticket:', id);
+            } catch (e) {
+                console.error('❌ Failed to send message:', e);
+                window.notify("Send failed: " + e.message);
+            }
+        };
+
+        window.openDm = (facultyId) => {
+            window.state.activeDmId = facultyId;
+            const dmHtml = `<div class="chat-view"><div class="chat-msgs" id="dm-scroller"></div><div class="chat-input" style="padding:1rem; border-top:1px solid var(--glass-border); display:flex; gap:10px; background:rgba(0,0,0,0.1);"><input type="text" id="dm-box-input" placeholder="Peer Message..." style="margin:0;"><button class="btn-action" onclick="window.sendDm()">Send</button></div></div>`;
+            window.openModal(`DM: ${USER_DB[facultyId].name}`, dmHtml);
+            window.refreshDmContent();
+        };
+
+        window.refreshDmContent = () => {
+            if(!db) return console.warn('⚠️ Database not initialized yet');
+            const container = document.getElementById('dm-scroller'); if(!container || !window.state.activeDmId) return;
+            const sorted = [window.state.user.uid, window.state.activeDmId].sort().join('___');
+            // Load messages from subcollection
+            onSnapshot(collection(db, 'direct_messages', sorted, 'messages'), s => {
+                const messages = s.docs.map(d => ({...d.data()}));
+                container.innerHTML = messages.map(m => `<div class="bubble ${m.senderId === window.state.user.uid ? 'mine' : 'theirs'}"><strong>${m.senderName}:</strong> ${m.text}</div>`).join('') || '<div class="empty-state">No shared history.</div>';
+                container.scrollTop = container.scrollHeight;
+            }, err => console.error('❌ Failed to load DM messages:', err));
+        };
+
+        window.sendDm = async () => {
+            if(!db) return window.notify("Database not connected yet. Please wait...");
+            const box = document.getElementById('dm-box-input'); if(!box.value) return;
+            const text = box.value; box.value = '';
+            try {
+                const sorted = [window.state.user.uid, window.state.activeDmId].sort().join('___');
+                await addDoc(collection(db, 'direct_messages', sorted, 'messages'), { senderId: window.state.user.uid, senderName: window.state.user.name, text, timestamp: serverTimestamp(), read: false });
+                console.log('✅ DM sent to:', window.state.activeDmId);
+            } catch (e) {
+                console.error('❌ DM send failed:', e);
+                window.notify("DM failed: " + e.message);
+            }
+        };
+
+        window.publishJob = async () => {
+            if(!window.bootReady || !db) return window.notify("System initializing... Please wait.");
+            const title = document.getElementById('o-title').value;
+            const comp = document.getElementById('o-comp').value;
+            const desc = document.getElementById('o-desc').value;
+            if(!title || !comp) return window.notify("Incomplete");
+            try {
+                const oppRef = await addDoc(collection(db, 'opportunities'), { title, company: comp, description: desc, createdBy: window.state.user.uid, createdAt: serverTimestamp(), applicantCount: 0, status: 'Open' });
+                console.log('✅ Opportunity published:', oppRef.id);
+                window.notify("Published"); window.closeModal();
+            } catch (e) {
+                console.error('❌ Opportunity publish failed:', e);
+                window.notify("Error: " + e.message);
+            }
+        };
+
+        window.resolveTicket = async (id) => {
+            if(!window.bootReady || !db) return window.notify("System initializing... Please wait.");
+            try {
+                await updateDoc(doc(db, 'tickets', id), { status: 'Resolved', updatedAt: serverTimestamp() });
+                console.log('✅ Ticket resolved:', id);
+                window.notify("Resolved"); window.closeModal();
+            } catch (e) {
+                console.error('❌ Ticket resolution failed:', e);
+                window.notify("Error: " + e.message);
+            }
+        };
+
+        window.applyToOpp = async (oppId, title) => {
+            if(!window.bootReady || !db) return window.notify("System initializing... Please wait.");
+            try {
+                const appRef = await addDoc(collection(db, 'applications'), {
+                    opportunityId: oppId, opportunityTitle: title, studentId: window.state.user.uid, studentName: window.state.user.name, status: 'Applied', appliedAt: serverTimestamp(), updatedAt: serverTimestamp()
+                });
+                console.log('✅ Application submitted:', appRef.id);
+                window.notify("Application Dispatched");
+            } catch (e) {
+                console.error('❌ Application submission failed:', e);
+                window.notify("Error: " + e.message);
+            }
+        };
+
+        window.exportApplicantsCSV = () => {
+            const csv = "Opportunity,Applicant,ID\n" + window.state.applications.map(a => `"${a.opportunityTitle}","${a.studentName}","${a.studentId}"`).join('\n');
+            const blob = new Blob([csv], {type:'text/csv'});
+            const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'CORE_Ledger.csv'; link.click();
+        };
+
+        // --- CORE RENDER ---
+        window.renderTab = (idx) => {
+            window.state.tab = idx; WebGLEngine.transition(idx);
+            document.querySelectorAll('.nav-btn').forEach((b, i) => b.classList.toggle('active', i === idx));
+            const root = document.getElementById('main-mount');
+            root.innerHTML = `<div class="header-blade"><h1>${NAV_SCHEMA[window.state.user.role][idx].label}</h1></div><div id="tab-root"></div>`;
+            const container = document.getElementById('tab-root');
+
+            const itemUI = (t) => `<div class="list-item" onclick="window.openTicket('${t.id}')"><div><span class="badge prio-${t.priority}">${t.priority}</span> <strong>${t.title}</strong></div><i data-lucide="chevron-right"></i></div>`;
+
+            if (window.state.user.role === 'Student') {
+                if (idx === 0) {
+                    container.innerHTML = `<div class="stat-grid"><div class="stat-card"><span class="stat-val">9.20/10</span><span class="stat-label">CGPA Ledger</span></div><div class="stat-card"><span class="stat-val">84%</span><span class="stat-label">Attendance</span></div><div class="stat-card interactive" onclick="window.viewAlerts()"><span class="stat-val" style="color:var(--accent-cyan)">03</span><span class="stat-label">Alerts</span></div></div><div class="feature-grid"><div class="glass-card interactive" onclick="window.viewTimetable()"><i data-lucide="calendar"></i><div class="card-title">View Timetable</div></div><div class="glass-card interactive" onclick="window.viewGrades()"><i data-lucide="file-text"></i><div class="card-title">Open Grade Sheet</div></div></div><div class="glass-card" style="margin-top:1.5rem;"><span class="stat-label">Circular Board</span><div class="list-stack" style="margin-top:1rem;">${window.state.circulars.map(c => `<div class="list-item" onclick="window.viewCircular('${c.id}')"><span>${c.text}</span><small>${c.sender}</small></div>`).join('') || renderEmpty('No active circulars at this node.')}</div></div>`;
+                } else if (idx === 1) {
+                    container.innerHTML = `<div class="sub-tab-container"><button class="sub-tab ${window.state.subTab==='tickets'?'active':''}" onclick="window.state.subTab='tickets'; window.renderTab(1)">Tickets</button><button class="sub-tab ${window.state.subTab==='opps'?'active':''}" onclick="window.state.subTab='opps'; window.renderTab(1)">Opps</button><button class="sub-tab ${window.state.subTab==='track'?'active':''}" onclick="window.state.subTab='track'; window.renderTab(1)">Track</button></div>`;
+                    if(window.state.subTab === 'tickets') {
+                        const mine = window.state.tickets.filter(t => t.studentId === window.state.user.uid);
+                        container.innerHTML += `<button class="btn-action" style="margin-bottom:2rem;" onclick="window.openModal('Create Ticket', '<input id=\\'t-title\\' placeholder=\\'Subject\\'><select id=\\'t-role\\'><option>Faculty</option><option>Admin</option><option>Authority</option></select><select id=\\'t-prio\\'><option>Low</option><option>Medium</option><option>High</option></select><textarea id=\\'t-desc\\' placeholder=\\'Details...\\'></textarea>', '<button class=\\'btn-action\\' onclick=\\'window.sendTicket()\\'>Dispatch</button>')">+ NEW TICKET</button>` + (mine.length ? `<div class="list-stack">${mine.map(itemUI).join('')}</div>` : renderEmpty('Your grievance ledger is clear.'));
+                    } else if(window.state.subTab === 'opps') {
+                        container.innerHTML += `<div class="feature-grid">${window.state.opportunities.map(o => `<div class="glass-card"><h3>${o.title}</h3><div class="stat-label">${o.company}</div><button class="btn-action" style="margin-top:1rem;" onclick="window.applyToOpp('${o.id}', '${o.title}')">Apply</button></div>`).join('') || renderEmpty('No active recruitment node found.')}</div>`;
+                    } else {
+                        const myApps = window.state.applications.filter(a => a.studentId === window.state.user.uid);
+                        container.innerHTML += `<div class="list-stack">${myApps.length ? myApps.map(a => `<div class="list-item"><div><strong>${a.opportunityTitle}</strong><br><small>Status: ${a.status || 'Applied'}</small></div><span class="badge">PENDING</span></div>`).join('') : renderEmpty('No submitted applications.')}</div>`;
+                    }
+                }
+            } else if (window.state.user.role === 'Faculty') {
+                if(idx === 0) {
+                    container.innerHTML = `<div class="feature-grid"><div class="glass-card"><h3>Academic Workbench</h3><div style="display:flex; gap:10px; margin-top:1rem;"><button class="btn-action" style="flex:1;" onclick="window.openAttendanceOptions()">Upload Student Attendance</button><button class="btn-action" style="background:var(--accent-cyan); flex:1;" onclick="window.openGradesOptions()">Upload Grades</button></div><input type="file" id="c-in" class="hidden" onchange="window.handleCSV(this)"></div></div>`;
+                } else if (idx === 1) {
+                    const ass = window.state.tickets.filter(t => t.assignedRole === 'Faculty');
+                    const dms = window.state.privateMessages.filter(m => m.receiver_id === window.state.user.uid);
+                    container.innerHTML = `<div class="feature-grid"><div class="glass-card" style="grid-column: span 1.5;"><span class="stat-label">Assigned Tickets</span><div class="list-stack" style="margin-top:1rem;">${ass.length ? ass.map(itemUI).join('') : renderEmpty('Assigned queue clear.')}</div></div><div class="glass-card" style="grid-column: span 1.5;"><span class="stat-label">Incoming Staff Messages</span><div class="list-stack" style="margin-top:1rem;">${dms.length ? dms.slice(-3).map(m => `<div class="list-item" onclick="window.openDm('${m.sender_id}')"><span>From: ${m.sender_name}</span><i data-lucide="message-square"></i></div>`).join('') : renderEmpty('No unread messages.')}</div></div></div>`;
+                } else if (idx === 2) {
+                    const others = Object.keys(USER_DB).filter(k => USER_DB[k].role === 'Faculty' && k !== window.state.user.uid);
+                    container.innerHTML = `<div style="margin-bottom:2rem;"><button class="btn-action" onclick="window.openModal('New Notice', '<textarea id=\\'notice-text\\' placeholder=\\'Broadcast details...\\'></textarea>', '<button class=\\'btn-action\\' onclick=\\'window.issueStudentNotice()\\'>Issue</button>')">+ ISSUE STUDENT NOTICE</button></div><div class="feature-grid"><div class="glass-card" style="grid-column: span 1.5;"><span class="stat-label">Official Circulars</span><div class="list-stack" style="margin-top:1.5rem;">${window.state.circulars.map(c => `<div class="list-item" onclick="window.viewCircular('${c.id}')"><span>${c.text}</span><small>${c.sender}</small></div>`).join('') || renderEmpty('Board clear.')}</div></div><div class="glass-card" style="grid-column: span 1.5;"><span class="stat-label">Staff Directory (DMs)</span><div class="list-stack" style="margin-top:1.5rem;">${others.map(k => `<div class="list-item" onclick="window.openDm('${k}')"><div><strong>${USER_DB[k].name}</strong><br><small>${k}</small></div><i data-lucide="message-square"></i></div>`).join('')}</div></div></div>`;
+                }
+            } else if (window.state.user.role === 'Admin') {
+                if(idx === 1) {
+                    container.innerHTML = `<div style="display:flex; gap:1rem; margin-bottom:2rem;"><button class="btn-action" onclick="window.openModal('Post Opp', '<input id=\\'o-comp\\' placeholder=\\'Company\\'><input id=\\'o-title\\' placeholder=\\'Role\\'><textarea id=\\'o-desc\\' placeholder=\\'Details...\\'></textarea>', '<button class=\\'btn-action\\' onclick=\\'window.publishJob()\\'>Publish</button>')">+ NEW POST</button><button class="btn-action" onclick="window.openModal('Circular', '<textarea id=\\'c-text\\' placeholder=\\'Announcement text...\\'></textarea>', '<button class=\\'btn-action\\' onclick=\\'window.publishCircular()\\'>Broadcast</button>')">+ BROADCAST</button><button class="btn-action" style="background:var(--success)" onclick="window.exportApplicantsCSV()">Export Applicants CSV</button></div><div class="feature-grid">${window.state.opportunities.map(o => `<div class="glass-card"><h3>${o.title}</h3><div class="stat-label">${o.company}</div></div>`).join('') || renderEmpty('No posts.')}</div>`;
+                } else if(idx === 0) {
+                    container.innerHTML = window.state.tickets.length ? `<div class="list-stack">${window.state.tickets.map(itemUI).join('')}</div>` : renderEmpty('System ledger clear.');
+                }
+            } else if (window.state.user.role === 'Authority') {
+                if (idx === 0) {
+                    const high = window.state.tickets.filter(t => t.priority === 'High' && t.status === 'Open');
+                    container.innerHTML = high.length ? `<div class="list-stack">${high.map(itemUI).join('')}</div>` : renderEmpty('No escalations.');
+                } else if (idx === 1) {
+                    container.innerHTML = `<div class="stat-grid"><div class="stat-card"><span class="stat-val">34</span><span class="stat-label">System Load</span></div><div class="stat-card"><span class="stat-val" style="color:var(--success)">92%</span><span class="stat-label">Resolution Efficiency</span></div><div class="stat-card"><span class="stat-val" style="color:var(--warning)">04</span><span class="stat-label">Active Escalations</span></div></div>`;
+                }
+            }
+
+            if(idx === NAV_SCHEMA[window.state.user.role].length - 1) {
+                container.innerHTML = `<div class="glass-card" style="align-items:flex-start; text-align:left;"><span class="stat-label">${window.state.user.role} Authorization</span><h2 style="font-size:3rem; margin:10px 0; font-weight:100;">${window.state.user.name}</h2><p style="opacity:0.6;">NODE UID: ${window.state.user.uid}</p><button class="btn-action" style="margin-top:3rem; background:transparent; border:1px solid var(--error); color:var(--error);" onclick="window.handleLogout()">TERMINATE SESSION</button></div>`;
+            }
+
+            lucide.createIcons();
+            gsap.fromTo("#tab-root", { opacity: 0, y: 15 }, { opacity: 1, y: 0, duration: 0.4 });
+        };
+
+        // BOOT SEQUENCE
+        window.onload = async () => {
+            try {
+                // Wait for config to be ready
+                await configReady;
+                
+                // Use the config that was set up in the initialization script above
+                const config = window.__firebaseConfig;
+                if (!config || !config.projectId) {
+                    console.error('❌ Firebase config not available:', config);
+                    window.notify('Firebase configuration error.');
+                    return;
+                }
+                console.log('🔥 Initializing Firebase with project:', config.projectId);
+                appInstance = initializeApp(config); 
+                
+                // Try to initialize Auth, but don't fail if API key is missing
+                try {
+                    auth = getAuth(appInstance);
+                    await signInAnonymously(auth);
+                    console.log('✅ Anonymous authentication successful');
+                } catch (authErr) {
+                    console.warn('⚠️ Firebase Auth failed (API key may be missing):', authErr.message);
+                    console.log('✅ Proceeding with Firestore anonymous access...');
+                }
+                
+                const { getFirestore: gf } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                db = gf(appInstance);
+                console.log('✅ Firebase Firestore initialized');
+                window.bootReady = true;
+                console.log('🚀 Boot sequence complete - ready for interaction');
+                try {
+                    await WebGLEngine.init();
+                    console.log('✅ WebGL initialized');
+                } catch (e) {
+                    console.warn('⚠️ WebGL init failed (non-critical):', e);
+                }
+                
+                // Set up real-time listeners (works with or without auth due to open rules)
+                const setupListeners = () => {
+                    console.log('📡 Setting up real-time listeners...');
+                    
+                    let listenersReady = 0;
+                    const checkAllReady = () => {
+                        listenersReady++;
+                        if(listenersReady === 5) {
+                            window.state.dataReady = true;
+                            console.log('✅ All listeners initialized and ready');
+                        }
+                    };
+                    
+                    onSnapshot(collection(db, 'tickets'), s => { 
+                        window.state.tickets = s.docs.map(d => ({id: d.id, ...d.data()})); 
+                        console.log('📌 Tickets synced:', window.state.tickets.length + ' documents');
+                        checkAllReady();
+                        if(window.state.user) { 
+                            window.renderTab(window.state.tab); 
+                            if(window.state.activeId) window.refreshChatContent(window.state.activeId); 
+                        } 
+                    }, err => {
+                        console.error('❌ Tickets listener error:', err);
+                    });
+                    
+                    onSnapshot(collection(db, 'opportunities'), s => { 
+                        window.state.opportunities = s.docs.map(d => ({id: d.id, ...d.data()})); 
+                        console.log('🏢 Opportunities synced:', window.state.opportunities.length + ' documents');
+                        checkAllReady();
+                        if(window.state.user) window.renderTab(window.state.tab); 
+                    }, err => {
+                        console.error('❌ Opportunities listener error:', err);
+                    });
+                        
+                    onSnapshot(collection(db, 'circulars'), s => { 
+                        window.state.circulars = s.docs.map(d => ({id: d.id, ...d.data()})); 
+                        console.log('📢 Circulars synced:', window.state.circulars.length + ' documents');
+                        checkAllReady();
+                        if(window.state.user) window.renderTab(window.state.tab); 
+                    }, err => {
+                        console.error('❌ Circulars listener error:', err);
+                    });
+                    
+                    onSnapshot(collection(db, 'applications'), s => { 
+                        window.state.applications = s.docs.map(d => ({id: d.id, ...d.data()})); 
+                        console.log('📋 Applications synced:', window.state.applications.length + ' documents');
+                        checkAllReady();
+                        if(window.state.user) window.renderTab(window.state.tab);
+                    }, err => {
+                        console.error('❌ Applications listener error:', err);
+                    });
+                    
+                    onSnapshot(collection(db, 'direct_messages'), s => { 
+                        window.state.privateMessages = s.docs.map(d => ({id: d.id, ...d.data()})); 
+                        console.log('💬 Messages synced:', window.state.privateMessages.length + ' documents');
+                        checkAllReady();
+                        if(window.state.activeDmId) window.refreshDmContent();
+                    }, err => {
+                        console.error('❌ Messages listener error:', err);
+                    });
+                    console.log('✅ All Firestore listeners attached - Database linked successfully');
+                    document.getElementById('loader-overlay').style.display = 'none';
+                };
+                
+                // Setup listeners immediately (no auth required due to open rules)
+                setupListeners();
+                
+                // Track auth state if available
+                if(auth) {
+                    onAuthStateChanged(auth, u => {
+                        if(u) {
+                            console.log('🔐 User authenticated:', u.uid);
+                        }
+                    });
+                }
+            } catch (e) { 
+                console.error('Boot error:', e);
+                document.getElementById('loader-overlay').style.display = 'none'; 
+            }
+            setTimeout(() => { const l = document.getElementById('loader-overlay'); if(l) l.style.display = 'none'; }, 4000);
+        };
+
+        document.getElementById('login-form').onsubmit = (e) => {
+            e.preventDefault();
+            const id = document.getElementById('node-uid').value.toUpperCase();
+            const pass = document.getElementById('node-pass').value;
+            const u = USER_DB[id];
+            if(u && u.pass === pass) {
+                window.state.user = { uid: id, ...u };
+                gsap.to("#view-login", { opacity: 0, duration: 0.5, onComplete: () => {
+                    document.getElementById('view-login').classList.add('hidden');
+                    document.getElementById('view-dashboard').classList.remove('hidden');
+                    document.getElementById('main-window').className = 'main-window dashboard-mode';
+                    document.querySelector('.webgl-container').style.opacity = 1;
+                    document.getElementById('nav-mount').innerHTML = NAV_SCHEMA[u.role].map((n, i) => `<button class="nav-btn" onclick="window.renderTab(${i})"><div class="nav-tooltip">${n.label}</div><i data-lucide="${n.icon}"></i></button>${i < NAV_SCHEMA[u.role].length - 1 ? '<div style="width:1px; height:20px; background:rgba(255,255,255,0.1); margin: 0 5px;"></div>' : ''}`).join('');
+                    gsap.fromTo("#view-dashboard", { opacity: 0 }, { opacity: 1, duration: 0.5 });
+                    gsap.fromTo(".nav-pill", { y: -50, opacity: 0, display: 'flex' }, { y: 0, opacity: 1, duration: 0.8, delay: 0.2 });
+                    window.renderTab(0);
+                }});
+            } else window.notify("Invalid Credentials");
+        };
+
+        // Explicit Window Mappings
+        window.handleCSV = handleCSV;
+        window.publishJob = publishJob;
+        window.publishCircular = publishCircular;
+        window.sendTicket = sendTicket;
+        window.sendMsg = sendMsg;
+        window.sendDm = sendDm;
+        window.applyToOpp = applyToOpp;
+        window.issueStudentNotice = issueStudentNotice;
+        window.downloadTemplate = downloadTemplate;
+        window.openAttendanceOptions = openAttendanceOptions;
+        window.openGradesOptions = openGradesOptions;
+        window.openCSVUpload = openCSVUpload;
+        window.viewGrades = viewGrades;
+        window.viewTimetable = viewTimetable;
+        window.viewAlerts = viewAlerts;
+        window.viewCircular = viewCircular;
+        window.resolveTicket = resolveTicket;
+        window.exportApplicantsCSV = exportApplicantsCSV;
+
+    </script>
+
+<script type="module" src="js/app.js"></script>
+
+</body>
+</html>
+
