@@ -1,2 +1,14 @@
-# CORE---Campus-Operations-and-Resource-Engine
-Web-based campus operations and resource management platform
+# CORE
+
+Campus Operations & Resource Engine
+
+Hackathon demo project.
+
+## Features
+- Role-based campus dashboard
+- Firebase backend
+- Firestore integration
+- Modern UI
+
+## Run
+Open index.html
