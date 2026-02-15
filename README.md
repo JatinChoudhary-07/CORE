@@ -1,14 +1,24 @@
-# CORE
+# CORE — Campus Operations & Resource Engine
 
-Campus Operations & Resource Engine
+A role-based campus management platform built for hackathon demo.
 
-Hackathon demo project.
+## Tech Stack
+- HTML / CSS / JS
+- Firebase Auth
+- Firestore
+- Firebase Hosting
 
 ## Features
-- Role-based campus dashboard
-- Firebase backend
-- Firestore integration
-- Modern UI
+- Student dashboard
+- Faculty interface
+- Admin control
+- Grievance tracking
+- Role-based access
 
-## Run
-Open index.html
+## Demo Credentials
+Student: ST-0001
+Faculty: FC-0001
+Admin: AD-0001
+
+## Run locally
+Open public/index.html
