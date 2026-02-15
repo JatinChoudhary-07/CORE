@@ -1,5 +1,6 @@
 # CORE — Campus Operations & Resource Engine
 
+Live Demo: https://aegis-protocol-bd795.web.app
 A role-based campus management platform built for hackathon demo.
 
 ## Tech Stack
